@@ -2,6 +2,16 @@
 
 This project translates the Claude Messages protocol to the OpenAI/Codex subscription Responses backend using Python `requests`. It keeps OpenAI as the provider and automatically refreshes supported Codex file credentials when needed. It does not install software or update an existing installation.
 
+## Folder organization
+
+- Root Python modules: live gateway, protocol conversion, and credential refresh. Keep these paths stable because the local service launches `gateway.py` here.
+- `claude` / `claude-astra`: executable launchers.
+- `tests/`: offline regression tests using temporary fake credentials and local mock services.
+- `scripts/test.sh`: one-command test runner; respects `BRIDGE_PYTHON` and avoids bytecode caches.
+- `requirements.txt`: gateway dependency; `.gitignore`: excludes local credentials, logs, environments and caches.
+
+Keep real credentials in the external paths below, never in this repository. Logs and runtime locks belong in the configured state/log directories outside the source folder. Do not add backup copies, virtual environments or generated files here. Folder reorganization does not restart or change a running gateway.
+
 ## Run this snapshot
 
 Use an existing Python environment containing the dependency in `requirements.txt`. The launcher uses `/usr/bin/env python3`; set `BRIDGE_PYTHON` to an existing interpreter containing `requests` for the gateway subprocess. No installation or system-service changes are performed automatically.
@@ -55,10 +65,10 @@ The bridge adds bounded timeouts, cross-process coordination and guarded atomic 
 
 ## Offline tests
 
-From this directory, using an existing interpreter with `requests`:
+From this directory, run `./scripts/test.sh`, or use an existing interpreter with `requests`:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 /path/to/existing/python -B -m unittest discover -v
+PYTHONDONTWRITEBYTECODE=1 /path/to/existing/python -B -m unittest discover -s tests -v
 /bin/sh -n ./claude-astra
 ```
 

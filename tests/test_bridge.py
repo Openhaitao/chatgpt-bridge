@@ -13,11 +13,11 @@ from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import gateway
 from bridge_support import controls, tool_output, InvalidRequest, safe_detail
 from sse_bridge import read_response
-loader = importlib.machinery.SourceFileLoader('bridge_launcher', str(Path(__file__).with_name('claude')))
+loader = importlib.machinery.SourceFileLoader('bridge_launcher', str(Path(__file__).resolve().parent.parent / 'claude'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 launcher = importlib.util.module_from_spec(spec)
 loader.exec_module(launcher)

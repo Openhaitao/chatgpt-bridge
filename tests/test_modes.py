@@ -1,5 +1,5 @@
 import sys,unittest
-sys.path.insert(0,str(__import__('pathlib').Path(__file__).resolve().parent))
+sys.path.insert(0,str(__import__('pathlib').Path(__file__).resolve().parent.parent))
 from request_modes import request_modes,InvalidMode
 class Tests(unittest.TestCase):
  def test_all_efforts_independent_of_speed(self):

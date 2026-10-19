@@ -1,6 +1,6 @@
 import sys,json,unittest
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parent))
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from sse_bridge import read_response,ResponseFailed
 
 def complete(output):return {'type':'response.completed','response':{'status':'completed','output':output}}
