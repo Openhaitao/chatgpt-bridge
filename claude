@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Portable local launcher; never installs software or changes authentication."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+BASE = Path(__file__).resolve().parent
+
+def health(url, token):
+    request = urllib.request.Request(url + '/health', headers={'Authorization': 'Bearer ' + token})
+    try:
+        with urllib.request.urlopen(request, timeout=1) as response:
+            return 'ready' if json.load(response) == {'service': 'claude-chatgpt-bridge', 'protocol': 1} else 'wrong'
+    except urllib.error.HTTPError:
+        return 'wrong'
+    except (ValueError, UnicodeError):
+        return 'wrong'
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return 'absent'
+
+def ensure_gateway(url, token, env):
+    state = Path(env.get('BRIDGE_STATE_DIR', Path.home()/'.cache/claude-chatgpt-bridge'))
+    state.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (state/'launcher.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        status = health(url, token)
+        if status == 'ready':
+            return
+        if status == 'wrong':
+            raise RuntimeError('Port is occupied by another service or a bridge using a different local token')
+        existing_python = Path.home()/'.local/lib/claude-chatgpt/venv/bin/python3'
+        python = env.get('BRIDGE_PYTHON', str(existing_python) if existing_python.is_file() else sys.executable)
+        gateway = Path(env.get('BRIDGE_GATEWAY', BASE/'gateway.py'))
+        child_env = dict(env, PYTHONDONTWRITEBYTECODE='1')
+        with (state/'gateway.log').open('ab') as log:
+            process = subprocess.Popen([python, str(gateway)], env=child_env, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+        for _ in range(100):
+            if process.poll() is not None:
+                raise RuntimeError('Gateway exited during startup; inspect ' + str(state/'gateway.log'))
+            status = health(url, token)
+            if status == 'ready':
+                return
+            if status == 'wrong':
+                process.terminate()
+                process.wait(timeout=5)
+                raise RuntimeError('Port was claimed by another service during startup')
+            time.sleep(.1)
+        process.terminate()
+        process.wait(timeout=5)
+        raise RuntimeError('Gateway health check timed out')
+
+def main():
+    env = dict(os.environ)
+    real = Path(env.get('BRIDGE_CLAUDE_BIN', Path.home()/'.local/lib/claude-chatgpt/native/node_modules/.bin/claude'))
+    args = sys.argv[1:]
+    if not real.is_file() or not os.access(real, os.X_OK):
+        raise RuntimeError('Set BRIDGE_CLAUDE_BIN to the installed native Claude executable')
+    if args and (args[0] in ['--version','-v','--help','-h','update','install','doctor'] or (args[0] == 'auth' and args[1:2] != ['status'])):
+        os.execv(str(real), [str(real), *args])
+    config_path = Path(env.get('BRIDGE_CONFIG', Path.home()/'.config/claude-chatgpt/gateway.json'))
+    config = json.loads(config_path.read_text())
+    token = config['local_token']
+    if not isinstance(token, str) or not token:
+        raise RuntimeError('Local config requires a nonempty local_token')
+    port = int(env.get('BRIDGE_PORT', '18734'))
+    if not 1 <= port <= 65535:
+        raise RuntimeError('BRIDGE_PORT must be between 1 and 65535')
+    url = 'http://127.0.0.1:' + str(port)
+    ensure_gateway(url, token, env)
+    for key in ['ANTHROPIC_API_KEY','CLAUDE_CODE_OAUTH_TOKEN','CLAUDE_CODE_USE_BEDROCK','CLAUDE_CODE_USE_VERTEX','CLAUDE_CODE_USE_FOUNDRY']:
+        env.pop(key, None)
+    env.update(ANTHROPIC_BASE_URL=url, ANTHROPIC_AUTH_TOKEN=token, ANTHROPIC_MODEL=config.get('default_model','claude-fable-5-1'), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1', CLAUDE_CODE_MAX_CONTEXT_TOKENS='200000')
+    for key, value in {'FABLE':'claude-fable-5-1','OPUS':'claude-opus-5-5','SONNET':'claude-sonnet-5-5','HAIKU':'claude-haiku-5-5'}.items():
+        env['ANTHROPIC_DEFAULT_' + key + '_MODEL'] = value
+    env.update(ANTHROPIC_CUSTOM_MODEL_OPTION='claude-opus-5-5-astra', ANTHROPIC_CUSTOM_MODEL_OPTION_NAME='GPT-6 Astra', ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION='ChatGPT subscription; Fast switch supported')
+    os.execve(str(real), [str(real), *args], env)
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (RuntimeError, OSError, ValueError, KeyError) as error:
+        # Never print configuration contents, tokens, or subprocess environments.
+        print('Bridge launcher: ' + (str(error) if isinstance(error, RuntimeError) else 'Invalid local configuration or executable; check BRIDGE_* paths'), file=sys.stderr)
+        sys.exit(1)

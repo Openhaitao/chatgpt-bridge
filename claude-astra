@@ -1,0 +1,4 @@
+#!/bin/sh
+# Resolve the sibling launcher, not a user-specific installed path.
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+exec "$HERE/claude" --model claude-opus-5-5-astra "$@"

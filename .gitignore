@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+auth.json
+gateway.json
+*.log
+*.lock
+.DS_Store
