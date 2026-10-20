@@ -74,6 +74,11 @@ class Tests(unittest.TestCase):
         self.assertEqual(tool_output('plain'), 'plain')
         with self.assertRaises(InvalidRequest): tool_output([{'type':'document'}])
 
+    def test_image_source_requires_plausible_data_url_fields(self):
+        with self.assertRaises(InvalidRequest): tool_output([{'type':'image','source':{'type':'base64','media_type':'image/png','data':''}}])
+        with self.assertRaises(InvalidRequest): tool_output([{'type':'image','source':{'type':'base64','media_type':'text/plain','data':'AAAA'}}])
+        with self.assertRaises(InvalidRequest): tool_output([{'type':'image','source':{'type':'url','url':'ftp://example.invalid/image.png'}}])
+
     def test_tool_final_fallback_after_item_done(self):
         from test_streaming import Response, complete
         for done in [{}, {'arguments':'{"x":1}'}]:

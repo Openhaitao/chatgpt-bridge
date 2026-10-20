@@ -41,9 +41,15 @@ def controls(body):
 def image(block):
     source = block.get('source', {})
     if source.get('type') == 'base64':
-        url = 'data:' + source['media_type'] + ';base64,' + source['data']
+        media_type = source.get('media_type')
+        data = source.get('data')
+        if media_type not in {'image/jpeg', 'image/png', 'image/gif', 'image/webp'} or not isinstance(data, str) or not data:
+            raise InvalidRequest('Image base64 source requires a supported image media type and nonempty data')
+        url = 'data:' + media_type + ';base64,' + data
     elif source.get('type') == 'url':
-        url = source['url']
+        url = source.get('url')
+        if not isinstance(url, str) or not url.startswith(('https://', 'http://')):
+            raise InvalidRequest('Image URL source requires an http or https URL')
     else:
         raise InvalidRequest('Unsupported image source')
     return {'type': 'input_image', 'image_url': url}
