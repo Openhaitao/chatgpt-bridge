@@ -39,8 +39,10 @@ class Fake(BaseHTTPRequestHandler):
     received = None
     error = 'invalid max_output_tokens'
     events = None
+    calls = 0
     def log_message(self, *args): pass
     def do_POST(self):
+        Fake.calls += 1
         Fake.received = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.send_response(Fake.status)
         self.end_headers()
@@ -126,6 +128,20 @@ class Tests(unittest.TestCase):
                 rejected=requests.post(url+'/v1/messages',headers=headers,json=body)
                 self.assertEqual(rejected.status_code,400)
                 self.assertIn('current Codex account catalog',rejected.json()['error']['message'])
+
+    def test_retries_chunked_upstream_failure_before_sse_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=Path(directory)/'config.json'; auth=Path(directory)/'auth.json'
+            config.write_text(json.dumps({'local_token':'test-local','model_aliases':{'alias':'gpt-6-astra'}}))
+            auth.write_text(json.dumps({'tokens':{'access_token':'test-access','account_id':'test-account'}}))
+            complete={'status':'completed','model':'gpt-6-astra','output':[{'type':'message','content':[{'type':'output_text','text':'OK'}]}],'usage':{'input_tokens':3,'output_tokens':1}}
+            Fake.status=200; Fake.calls=0
+            with serving(Fake) as upstream, patch.object(gateway,'CONFIG',config), patch.object(gateway,'AUTH',auth), patch.object(gateway,'UPSTREAM',upstream), patch.object(gateway,'read_response',side_effect=[requests.exceptions.ChunkedEncodingError('interrupted'),(complete,None)]), serving(gateway.H) as url:
+                body={'model':'alias','messages':[{'role':'user','content':'hello'}],'stream':False,'tool_choice':{'type':'auto'}}
+                response=requests.post(url+'/v1/messages',headers={'Authorization':'Bearer test-local'},json=body)
+                self.assertEqual(response.status_code,200)
+                self.assertEqual(response.json()['content'][0]['text'],'OK')
+                self.assertEqual(Fake.calls,2)
 
     def test_http_fake_upstream(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -74,12 +74,6 @@ class H(BaseHTTPRequestHandler):
     secrets.extend(auth.values())
     return requests.post(UPSTREAM,headers={'Authorization':'Bearer '+auth['access_token'],'ChatGPT-Account-ID':auth['account_id'],'Content-Type':'application/json','Accept':'text/event-stream','originator':'codex_cli_rs','User-Agent':'codex_cli_rs/0.163.0'},json=body,stream=True,timeout=120)
    r,auth=authorized_post(AuthStore(AUTH),send)
-   if r.status_code!=200:
-    try:
-     status,error=upstream_error(r,secrets)
-     return self.sendj(error,status)
-    finally:r.close()
-   headers_at=time.monotonic()
    message_id='msg_'+uuid.uuid4().hex
    def event(name,data):
     nonlocal streaming_started
@@ -89,9 +83,27 @@ class H(BaseHTTPRequestHandler):
      start={'type':'message_start','message':{'id':message_id,'type':'message','role':'assistant','content':[],'model':requested,'stop_reason':None,'stop_sequence':None,'usage':{'input_tokens':0,'output_tokens':0}}}
      self.wfile.write(('event: message_start\ndata: '+json.dumps(start)+'\n\n').encode())
     self.wfile.write(('event: '+name+'\ndata: '+json.dumps(data)+'\n\n').encode());self.wfile.flush()
-   try:
-    result,first_at=read_response(r,event if b.get('stream') else None)
-   finally:r.close()
+   # A proxy or subscription endpoint can close a chunked SSE response before
+   # delivering any event. Retry once only before our own SSE headers are sent:
+   # no visible text/tool call can then be duplicated, and no client result has
+   # been presented as successful. Never retry after the first forwarded event.
+   for stream_attempt in range(2):
+    if r.status_code!=200:
+     try:
+      status,error=upstream_error(r,secrets)
+      return self.sendj(error,status)
+     finally:r.close()
+    headers_at=time.monotonic()
+    try:
+     result,first_at=read_response(r,event if b.get('stream') else None)
+     break
+    except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError, requests.exceptions.SSLError) as e:
+     if streaming_started or stream_attempt:
+      raise
+     print('upstream_pre_stream_interrupt',type(e).__name__,flush=True)
+     r,auth=authorized_post(AuthStore(AUTH),send)
+    finally:
+     r.close()
    blocks=[]
    for x in result.get('output',[]):
     if x.get('type')=='message':blocks.extend({'type':'text','text':c.get('text','')} for c in x.get('content',[]) if c.get('type')=='output_text')
