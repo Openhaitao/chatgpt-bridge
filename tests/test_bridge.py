@@ -15,7 +15,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import gateway
-from bridge_support import controls, tool_output, InvalidRequest, safe_detail
+from bridge_support import controls, tool_output, InvalidRequest, safe_detail, upstream_error
 from sse_bridge import read_response
 loader = importlib.machinery.SourceFileLoader('bridge_launcher', str(Path(__file__).resolve().parent.parent / 'claude'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -96,6 +96,36 @@ class Tests(unittest.TestCase):
         value=safe_detail('secret-local Bearer abc sk-example access_token=xyz eyJabc.def', ['secret-local'])
         for secret in ['secret-local','abc','sk-example','xyz','eyJabc.def']:
             self.assertNotIn(secret,value)
+
+    def test_upstream_error_preserves_safe_json_detail(self):
+        class Response:
+            status_code = 400
+            def __init__(self, payload): self.payload = payload
+            def json(self): return self.payload
+        cases = [
+            ({'error': {'message': 'invalid model'}}, 'invalid model'),
+            ({'error': {'detail': 'invalid request'}}, 'invalid request'),
+            ({'detail': 'model is unavailable for this account'}, 'model is unavailable for this account'),
+        ]
+        for payload, expected in cases:
+            status, error = upstream_error(Response(payload), ['private-token'])
+            self.assertEqual(status, 400)
+            self.assertEqual(error['error']['message'], expected)
+            self.assertEqual(error['error']['upstream_status'], 400)
+
+    def test_account_model_catalog_limits_listing_and_requests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=Path(directory)/'config.json'; auth=Path(directory)/'auth.json'
+            config.write_text(json.dumps({'local_token':'test-local','available_models':['gpt-6-luna'],'model_aliases':{'allowed':'gpt-6-luna','blocked':'gpt-6-astra'}}))
+            auth.write_text(json.dumps({'tokens':{'access_token':'test-access','account_id':'test-account'}}))
+            with patch.object(gateway,'CONFIG',config), patch.object(gateway,'AUTH',auth), serving(gateway.H) as url:
+                headers={'Authorization':'Bearer test-local'}
+                listed=requests.get(url+'/v1/models').json()['data']
+                self.assertEqual([model['id'] for model in listed], ['gpt-6-luna'])
+                body={'model':'blocked','messages':[{'role':'user','content':'hello'}],'tool_choice':{'type':'auto'}}
+                rejected=requests.post(url+'/v1/messages',headers=headers,json=body)
+                self.assertEqual(rejected.status_code,400)
+                self.assertIn('current Codex account catalog',rejected.json()['error']['message'])
 
     def test_http_fake_upstream(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -11,6 +11,13 @@ CONFIG=Path(os.environ.get('BRIDGE_CONFIG', Path.home()/'.config/claude-chatgpt/
 AUTH=Path(os.environ.get('BRIDGE_CODEX_AUTH', Path.home()/'.codex/auth.json'))
 UPSTREAM=os.environ.get('BRIDGE_UPSTREAM_URL','https://chatgpt.com/backend-api/codex/responses')
 MODELS=['gpt-6.1-sol','gpt-6-astra','gpt-6-sol','gpt-6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']
+
+def available_models(config):
+ models=config.get('available_models',MODELS)
+ if not isinstance(models,list) or not models or any(not isinstance(model,str) or model not in MODELS for model in models):
+  raise ValueError('Invalid available_models configuration')
+ return models
+
 class H(BaseHTTPRequestHandler):
  def log_message(self,*a):pass
  def do_GET(self):
@@ -19,7 +26,8 @@ class H(BaseHTTPRequestHandler):
    if self.headers.get('Authorization') != 'Bearer '+config['local_token']:return self.sendj({'error':{'message':'Local auth required'}},401)
    return self.sendj({'service':'claude-chatgpt-bridge','protocol':1})
   if self.path not in ('/v1/models','/models'):return self.sendj({'error':{'message':'Not found'}},404)
-  self.sendj({'data':[{'id':m,'type':'model','display_name':m} for m in MODELS]})
+  models=available_models(json.loads(CONFIG.read_text()))
+  self.sendj({'data':[{'id':m,'type':'model','display_name':m} for m in models]})
  def sendj(self,obj,code=200):
   d=json.dumps(obj).encode();self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(d)));self.end_headers();self.wfile.write(d)
  def do_POST(self):
@@ -27,6 +35,7 @@ class H(BaseHTTPRequestHandler):
    streaming_started=False
    started=time.monotonic()
    config=json.loads(CONFIG.read_text())
+   models=available_models(config)
    local_token=config['local_token']
    secrets=[local_token]
    streaming_started=False
@@ -57,7 +66,7 @@ class H(BaseHTTPRequestHandler):
    aliases=config.get('model_aliases',{})
    normalized=requested.removesuffix('[1m]')
    selected=normalized if normalized in MODELS else aliases.get(normalized)
-   if selected not in MODELS:return self.sendj({'type':'error','error':{'type':'invalid_request_error','message':'Unsupported local model alias'}},400)
+   if selected not in models:return self.sendj({'type':'error','error':{'type':'invalid_request_error','message':'Model is not available in the current Codex account catalog; update available_models and model_aliases.'}},400)
    try:modes=request_modes(b)
    except InvalidMode as e:return self.sendj({'type':'error','error':{'type':'invalid_request_error','message':str(e)}},400)
    body={'model':selected,'instructions':instructions or 'Be helpful.','input':inp,'tools':tools,'store':False,'stream':True,**modes,**extra,'include':['reasoning.encrypted_content']}

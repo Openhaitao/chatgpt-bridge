@@ -75,8 +75,15 @@ def safe_detail(value, secrets=()):
 def upstream_error(response, secrets=()):
     try:
         payload = response.json()
-        error = payload.get('error', payload)
-        detail = error.get('message', 'Upstream request failed') if isinstance(error, dict) else str(error)
+        error = payload.get('error') if isinstance(payload, dict) else None
+        if isinstance(error, dict):
+            detail = error.get('message') or error.get('detail') or 'Upstream request failed'
+        elif isinstance(error, str):
+            detail = error
+        elif isinstance(payload, dict) and 'detail' in payload:
+            detail = payload['detail']
+        else:
+            detail = 'Upstream request failed'
     except (ValueError, AttributeError):
         detail = 'Upstream returned a non-JSON error (body withheld)'
     status = response.status_code if 400 <= response.status_code <= 599 else 502

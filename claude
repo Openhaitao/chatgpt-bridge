@@ -78,7 +78,7 @@ def main():
     env.update(ANTHROPIC_BASE_URL=url, ANTHROPIC_AUTH_TOKEN=token, ANTHROPIC_MODEL=config.get('default_model','claude-fable-5-1'), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1', CLAUDE_CODE_MAX_CONTEXT_TOKENS='200000')
     for key, value in {'FABLE':'claude-fable-5-1','OPUS':'claude-opus-5-5','SONNET':'claude-sonnet-5-5','HAIKU':'claude-haiku-5-5'}.items():
         env['ANTHROPIC_DEFAULT_' + key + '_MODEL'] = value
-    env.update(ANTHROPIC_CUSTOM_MODEL_OPTION='claude-opus-5-5-astra', ANTHROPIC_CUSTOM_MODEL_OPTION_NAME='GPT-6 Astra', ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION='ChatGPT subscription; Fast switch supported')
+    env.update(ANTHROPIC_CUSTOM_MODEL_OPTION='claude-opus-5-5-astra', ANTHROPIC_CUSTOM_MODEL_OPTION_NAME='GPT-5.6 Terra', ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION='ChatGPT subscription; current account-supported balanced model')
     os.execve(str(real), [str(real), *args], env)
 
 if __name__ == '__main__':

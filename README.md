@@ -20,7 +20,7 @@ Run `./claude` (or `./claude-astra`). It checks authenticated `/health`, starts 
 
 | Environment variable | Default / purpose |
 | --- | --- |
-| `BRIDGE_CONFIG` | `~/.config/claude-chatgpt/gateway.json`; existing JSON with nonempty `local_token`, optional `default_model` and `model_aliases` |
+| `BRIDGE_CONFIG` | `~/.config/claude-chatgpt/gateway.json`; existing JSON with nonempty `local_token`, optional `default_model`, `model_aliases`, and account-scoped `available_models` |
 | `BRIDGE_CODEX_AUTH` | `~/.codex/auth.json`; existing `tokens.access_token` and `tokens.account_id`; automatic refresh also requires `tokens.refresh_token`. Rotated credentials are saved here. File-backed ChatGPT auth only; not keyring/external/API-key auth. |
 | `BRIDGE_PORT` | `18734`; loopback gateway port |
 | `BRIDGE_CLAUDE_BIN` | `~/.local/lib/claude-chatgpt/native/node_modules/.bin/claude`; existing native executable |
@@ -53,14 +53,14 @@ The bridge adds bounded timeouts, cross-process coordination and guarded atomic 
 
 ## Translation and limitations
 
-- Existing model allowlist and configured alias resolution are preserved, including `[1m]` suffix normalization. Alias names are not assumed to be provider model names.
+- The built-in model allowlist remains the compatibility ceiling. When `available_models` is configured, `/models` and request validation use that account-scoped subset; refresh it from the signed-in Codex account catalog when account access changes. Alias names are not assumed to be provider model names, and `[1m]` suffix normalization is preserved.
 - Text and image tool results become Responses `function_call_output.output` content blocks (`input_text` / `input_image`), not JSON strings containing image descriptions. Base64 and URL images are supported. Other tool-result block types fail explicitly.
 - Tool calls keep call IDs and stream argument deltas once. An output-item done event without arguments defers its block stop until final arguments arrive; item-done argument payloads also work.
 - Positive integer `max_tokens` maps to standard Responses `max_output_tokens`. Acceptance and enforcement depend on the subscription endpoint. The bridge does not claim a local tokenizer or an exact local output limit. Backend rejection remains an explicit sanitized HTTP error rather than silently dropping the cap. Backend `incomplete` with reason `max_output_tokens` becomes `stop_reason: max_tokens` for text; a token-truncated tool call fails explicitly instead of returning executable partial arguments.
 - Nonempty `stop_sequences` returns an explanatory 400 before an upstream request. Empty list or omission is accepted. No local stop matching is claimed.
 - `tool_choice` supports `auto`, `any` → `required`, `none`, and `tool` → named function. `disable_parallel_tool_use` maps to `parallel_tool_calls`. Named choices must reference supplied tools. Backend-specific unsupported choices remain explicit errors.
 - Reasoning effort and speed remain independent. Fast maps to priority service tier; echoed tier is not proof of billing or scheduling priority.
-- Upstream HTTP 4xx/5xx status codes and message details are preserved after removal of known credential values and common token patterns. Non-JSON error bodies are withheld. Stream errors after headers use SSE error events, not a second HTTP response. Unrecognized local exceptions expose only class names.
+- Upstream HTTP 4xx/5xx status codes and message details (including top-level `detail` errors) are preserved after removal of known credential values and common token patterns. Non-JSON error bodies are withheld. Stream errors after headers use SSE error events, not a second HTTP response. Unrecognized local exceptions expose only class names.
 - The count-tokens endpoint remains a rough character-based estimate, not an official tokenizer. This bridge is not a complete implementation of every Messages API feature. No model billing, output caps, or live backend compatibility can be established by fake-upstream tests alone.
 
 ## Offline tests
